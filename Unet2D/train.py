@@ -1,3 +1,6 @@
+import sys
+sys.path.append("utils")
+
 import numpy as np
 import pandas as pd
 import matplotlib as mp
@@ -15,7 +18,6 @@ from Unet2D import Unet2D
 import torch.optim as optim
 import torchvision
 from tqdm import tqdm
-import sys
 import time
 import os
 from importlib import import_module
