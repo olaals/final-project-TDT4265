@@ -1,5 +1,7 @@
 import sys
 sys.path.append("utils")
+sys.path.append("models")
+from file_io import get_dict, add_config_parser
 
 import numpy as np
 import pandas as pd
@@ -12,7 +14,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader, sampler
 from torch import nn
 
-from DatasetLoader import DatasetLoader
+from DatasetLoader import DatasetLoader, CamusResizedDataset
 from Unet2D import Unet2D
 
 import torch.optim as optim
@@ -89,10 +91,10 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1):
     return train_loss, valid_loss    
 
 def acc_metric(predb, yb):
-    print(type(predb))
-    print(predb.shape)
-    print(torch.max(predb))
-    print(torch.min(predb)) 
+    #print(type(predb))
+    #print(predb.shape)
+    #print(torch.max(predb))
+    #print(torch.min(predb)) 
     return (predb.argmax(dim=1) == yb.cuda()).float().mean()
 
 def batch_to_img(xb, idx):
@@ -105,30 +107,40 @@ def predb_to_mask(predb, idx):
 
 def main ():
     #enable if you want to see some plotting
-    visual_debug = True
+    visual_debug = False
+
+    args = add_config_parser() 
+    cfg = get_dict(args, print_config=True)
 
     #batch size
-    bs = 12
+    bs = cfg["batch_size"]
 
     #epochs
-    epochs_val = 50
+    epochs_val = cfg["epochs"]
 
     #learning rate
-    learn_rate = 0.01
+    learn_rate = cfg["learning_rate"]
+
+    train_dir = cfg["train_dir"]
+    val_dir = cfg["val_dir"]
+    test_dir = cfg["test_dir"]
+
+    train_transforms = cfg["train_transforms"]
+    val_transforms = cfg["val_transforms"]
 
     #sets the matplotlib display backend (most likely not needed)
     mp.use('TkAgg', force=True)
 
-    #load the training data
-    base_path = Path('/home/ola/projects/TDT4265/final-project/dataset/CAMUS_resized/')
-    data = DatasetLoader(base_path/'train_gray', 
-                        base_path/'train_gt')
-    print(len(data))
+    train_ds = CamusResizedDataset(train_dir, transforms=train_transforms)
+    val_ds = CamusResizedDataset(val_dir, transforms=val_transforms)
+    test_ds = CamusResizedDataset(test_dir)
+
 
     #split the training dataset and initialize the data loaders
-    train_dataset, valid_dataset = torch.utils.data.random_split(data, (300, 150))
-    train_data = DataLoader(train_dataset, batch_size=bs, shuffle=True)
-    valid_data = DataLoader(valid_dataset, batch_size=bs, shuffle=True)
+    train_data = DataLoader(dataset=train_ds, batch_size=bs, shuffle=True)
+    valid_data = DataLoader(dataset=val_ds, batch_size=bs, shuffle=True)
+
+
 
     if visual_debug:
         fig, ax = plt.subplots(1,2)
@@ -136,11 +148,12 @@ def main ():
         ax[1].imshow(data.open_mask(150))
         plt.show()
 
-    xb, yb = next(iter(train_data))
-    print (xb.shape, yb.shape)
+    #xb, yb = next(iter(train_data))
+    #print (xb.shape, yb.shape)
 
     # build the Unet2D with one channel as input and 2 channels as output
     unet = Unet2D(1,2)
+    unet.cuda()
 
     #loss function and optimizer
     loss_fn = nn.CrossEntropyLoss()
