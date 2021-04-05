@@ -1,57 +1,9 @@
-import sys
-sys.path.append("utils")
-from camus_resized_loader import load_input_gt_dir
 import numpy as np
 import torch
-import albumentations as A
 
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader, sampler
 from PIL import Image
-import matplotlib.pyplot as plt
-
-
-class CamusResizedDataset(Dataset):
-    def __init__(self, input_gt_dir, 
-            transforms = A.Compose([
-                A.HorizontalFlip(p=.5),
-                A.ShiftScaleRotate(shift_limit=0, scale_limit=0.3, rotate_limit=30, p=0.9),
-                ])
-            ):
-        super().__init__()
-        self.transforms = transforms
-        self.input_gt_imgs_list = load_input_gt_dir(input_gt_dir)
-        print(len(self.input_gt_imgs_list))
-
-
-    def __len__(self):
-        return len(self.input_gt_imgs_list)
-
-    def __getitem__(self, index):
-        input_img, gt_img = self.input_gt_imgs_list[index]
-        input_img = np.rot90(input_img, 3)
-        gt_img = np.where(gt_img>100, 1, 0)
-        gt_img = np.rot90(gt_img, 3) # pytorch does not like loading images that has been rotated
-        input_img = input_img - np.zeros_like(input_img) # fix for pytorch loading rotated image
-        gt_img = gt_img - np.zeros_like(input_img)
-
-
-        if self.transforms:
-            transformed = self.transforms(image=input_img,mask=gt_img)
-            input_img = transformed["image"]
-            gt_img = transformed["mask"]
-
-        return input_img, gt_img
-
-
-
-
-
-    
-
-
-
-
 
 #load data from a folder
 class DatasetLoader(Dataset):
@@ -77,7 +29,7 @@ class DatasetLoader(Dataset):
         #open ultrasound data
         raw_us = np.stack([np.array(Image.open(self.files[idx]['gray'])),
                            ], axis=2)
-   
+    
         if invert:
             raw_us = raw_us.transpose((2,0,1))
     
@@ -105,17 +57,3 @@ class DatasetLoader(Dataset):
         
         return Image.fromarray(arr.astype(np.uint8), 'RGB')
     
-if __name__ == '__main__':
-    input_gt_path_val = 'datasets/CAMUS_resized/val'
-    CAMUS_resized_val = CamusResizedDataset(input_gt_path_val)
-    for i in range(len(CAMUS_resized_val)):
-        print(i)
-        f, axarr = plt.subplots(1,2)
-        img,gt = CAMUS_resized_val[i]
-        axarr[0].imshow(img)
-        axarr[1].imshow(gt)
-        plt.show()
-
-
-    pass
-
