@@ -24,8 +24,10 @@ def get_dict(args, print_config=False):
             print(f'{key}: {cfg[key]}')
     return cfg
 
-    
-    
+def import_model_from_path(model, model_path):
+    sys.path.append(model_path)
+    return import_module(model)
+
 
     
 

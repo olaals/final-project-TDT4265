@@ -1,7 +1,7 @@
 import sys
 sys.path.append("utils")
 sys.path.append("models")
-from file_io import get_dict, add_config_parser
+from file_io import *
 from train_utils import *
 
 import numpy as np
@@ -15,8 +15,8 @@ import torch
 from torch.utils.data import Dataset, DataLoader, sampler
 from torch import nn
 
-from DatasetLoader import DatasetLoader, CamusResizedDataset
-from Unet2D import Unet2D
+from dataloaders import DatasetLoader, CamusResizedDataset
+#from Unet2D import Unet2D
 
 import torch.optim as optim
 import torchvision
@@ -24,6 +24,7 @@ from tqdm import tqdm
 import time
 import os
 from importlib import import_module
+from torch.utils.tensorboard import SummaryWriter
 
 PRINT_DEBUG = False
 
@@ -43,6 +44,7 @@ def check_accuracy(valid_dl, model, loss_fn, acc_fn):
     model.eval()
     running_loss = 0.0
     running_acc = 0.0
+    running_dice = 0.0
     with torch.no_grad():
         for X_batch, Y_batch in valid_dl:
             X_batch = X_batch.cuda()
@@ -51,32 +53,45 @@ def check_accuracy(valid_dl, model, loss_fn, acc_fn):
             outputs = model(X_batch)
             loss = loss_fn(outputs, Y_batch.long())
             acc = acc_fn(outputs, Y_batch)
+            dice_score = mean_dice_score(outputs, Y_batch)
+
+
+
+
             running_acc  += acc * cur_batch_sz
             running_loss += loss * cur_batch_sz
+            running_dice += dice_score * cur_batch_sz
     average_loss = running_loss / len(valid_dl.dataset)
     average_acc = running_acc / len(valid_dl.dataset)
-    print('{} Loss: {:.4f} Acc: {}'.format("Validation", average_loss, average_acc))
-    return average_loss, average_acc
+    average_dice_sc = running_dice / len(valid_dl.dataset)
+    print('{} Loss: {:.4f} PxAcc: {} Dice: {}'.format("Validation", average_loss, average_acc, average_dice_sc))
+    return average_loss, average_acc, average_dice_sc
 
 
 def print_epoch_stats(epoch, epochs, avg_train_loss, avg_train_acc):
     print('Epoch {}/{}'.format(epoch, epochs - 1))
     print('-' * 10)
-    print('{} Loss: {:.4f} Acc: {}'.format("Train", avg_train_loss, avg_train_acc))
+    print('{} Loss: {:.4f} PxAcc: {}'.format("Train", avg_train_loss, avg_train_acc))
     print('-' * 10)
 
 
-def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1):
+def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1, tb_writer=None):
     start = time.time()
     model.cuda()
     len_train_ds = len(train_dl.dataset)
 
     train_loss, valid_loss = [], []
+    seen_train_ex = 0
 
     best_acc = 0.0
+    highest_dice = 0.0
+    seen_train_ex_highest_dice = 0
 
     for epoch in range(epochs):
         model.train()
+        weight = epoch/epochs
+        print("weight", weight)
+        loss_fn = weighted_combined_loss(nn.CrossEntropyLoss(), dice_loss, weight)
         print('Epoch {}/{}'.format(epoch, epochs - 1))
         print('-' * 10)
         running_loss = 0.0
@@ -88,10 +103,21 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1):
             running_acc  += acc*X_batch.size(0)
             running_loss += loss*X_batch.size(0)
             step += 1
+            seen_train_ex += X_batch.size(0)
+
+            tb_writer.add_scalar('Training loss', loss, seen_train_ex)
+            tb_writer.add_scalar('Training accuracy', acc, seen_train_ex)
+
+
             if step % 5 == 0:
                 print('Current step: {}  Loss: {}  Acc: {} '.format(step, loss, acc))
 
-        avg_val_loss, avg_val_acc = check_accuracy(valid_dl, model, loss_fn, acc_fn)
+        avg_val_loss, avg_val_acc, avg_dice = check_accuracy(valid_dl, model, loss_fn, acc_fn)
+        if avg_dice > highest_dice:
+            highest_dice = avg_dice
+        tb_writer.add_scalar('Validation loss', avg_val_loss, seen_train_ex)
+        tb_writer.add_scalar('Validation accuracy', avg_val_acc, seen_train_ex)
+
         
 
         avg_train_loss = running_loss / len_train_ds
@@ -104,24 +130,23 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1):
     time_elapsed = time.time() - start
     print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))    
     
-    return train_loss, valid_loss    
+    return train_loss, valid_loss, highest_dice
 
-def acc_metric(predb, yb):
-    #print(type(predb))
-    #print(predb.shape)
-    #print(torch.max(predb))
-    #print(torch.min(predb)) 
-    return (predb.argmax(dim=1) == yb.cuda()).float().mean()
+def init_train_stats_dict(train_stats):
+    train_stats["Train CE loss"] = []
+    train_stats["Train px acc"] = []
+    train_stats["Val CE loss"] = []
+    train_stats["Val px acc"] = []
+    #trains_stats["V
 
-def batch_to_img(xb, idx):
-    img = np.array(xb[idx,0:3])
-    return img.transpose((1,2,0))
+def main():
 
-def predb_to_mask(predb, idx):
-    p = torch.functional.F.softmax(predb[idx], 0)
-    return p.argmax(0).cpu()
+    train_stats = {}
 
-def main ():
+
+
+
+
     #enable if you want to see some plotting
     visual_debug = True
 
@@ -143,6 +168,20 @@ def main ():
 
     train_transforms = cfg["train_transforms"]
     val_transforms = cfg["val_transforms"]
+    model_file = cfg["model"]
+    dataset = cfg["dataset"]
+
+
+
+    logdir = os.path.join("tensorboard", dataset, model_file)
+    try:
+        try_number = len(os.listdir(logdir))
+    except:
+        try_number = 0
+    logdir_folder = f'N{try_number}_bs{bs}_lr{learn_rate}'
+    logdir = os.path.join(logdir, logdir_folder)
+    
+    tb_writer = SummaryWriter(logdir)
 
     #sets the matplotlib display backend (most likely not needed)
     mp.use('TkAgg', force=True)
@@ -164,20 +203,23 @@ def main ():
         ax[1].imshow(train_ds.get_np_mask(150))
         plt.show()
 
-    #xb, yb = next(iter(train_data))
-    #print (xb.shape, yb.shape)
-
     # build the Unet2D with one channel as input and 2 channels as output
-    unet = Unet2D(1,2)
+    model_path = os.path.join("models",dataset)
+    model_import = import_model_from_path(model_file, model_path)
+
+    unet = model_import.Unet2D(1,2,channel_ratio=2)
     unet.cuda()
 
     #loss function and optimizer
     loss_fn = nn.CrossEntropyLoss()
+    loss_fn2 = dice_loss
+    loss_fn3 = weighted_combined_loss(loss_fn, loss_fn2)
     opt = torch.optim.Adam(unet.parameters(), lr=learn_rate)
 
     #do some training
-    train_loss, valid_loss = train(unet, train_data, valid_data, loss_fn, opt, acc_metric, epochs=epochs_val)
+    train_loss, valid_loss,highest_dice = train(unet, train_data, valid_data, loss_fn3, opt, mean_pixel_accuracy, epochs=epochs_val, tb_writer=tb_writer)
 
+    tb_writer.add_hparams({'lr':learn_rate, 'batch size': bs}, {"highest dice": highest_dice})
     #plot training and validation losses
     if visual_debug:
         print("Visual debug")
