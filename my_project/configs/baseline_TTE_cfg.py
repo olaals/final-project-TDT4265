@@ -3,21 +3,26 @@ from albumentations.pytorch.transforms import ToTensorV2
 
 def get_config():
     config = {
-        "model": "improved_v1",
+        "model": "baseline",
         "epochs": 15,
-        "batch_size": 12,
-        "learning_rate": 3e-3,
+        "batch_size": 16,
+        "learning_rate": 0.01,
         "input_width": 500,
         "input_height": 500,
+        "channel_ratio": 1,
         
-        "dataset": "CAMUS_resized",
+        "dataset": "TTE",
+        "isotropic": True,
 
         "train_transforms": A.Compose([
+            A.Resize(384,512),
             A.Normalize(mean=[0.0],std=[1.0], max_pixel_value=255),
-            A.ShiftScaleRotate(shift_limit=0.0, scale_limit=0.2, rotate_limit=20, p=0.7)
+            #ToTensorV2()
             ]),
         "val_transforms": A.Compose([
+            A.Resize(384,512),
             A.Normalize(mean=[0.0],std=[1.0], max_pixel_value=255),
+            #ToTensorV2()
             ]),
     }
     return config

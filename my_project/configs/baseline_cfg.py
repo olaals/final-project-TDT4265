@@ -9,10 +9,9 @@ def get_config():
         "learning_rate": 0.01,
         "input_width": 500,
         "input_height": 500,
+        "channel_ratio": 1,
         
-        "train_dir": "datasets/CAMUS_resized/train",
-        "val_dir": "datasets/CAMUS_resized/val",
-        "test_dir": "datasets/CAMUS_resized/test",
+        "dataset": 'CAMUS_resized',
 
         "train_transforms": A.Compose([
             A.Normalize(mean=[0.0],std=[1.0], max_pixel_value=255),

@@ -15,7 +15,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader, sampler
 from torch import nn
 
-from dataloaders import DatasetLoader, CamusResizedDataset
+from dataloaders import get_dataloaders, DatasetLoader, CamusResizedDataset, TTEDataset
 #from Unet2D import Unet2D
 
 import torch.optim as optim
@@ -40,11 +40,12 @@ def train_step(X_batch, Y_batch, optimizer, model, loss_fn, acc_fn):
     return loss, acc
     
 
-def check_accuracy(valid_dl, model, loss_fn, acc_fn):
+def check_accuracy(valid_dl, model, loss_fn, acc_fn, classes):
     model.eval()
     running_loss = 0.0
     running_acc = 0.0
     running_dice = 0.0
+    running_class_dice = np.zeros(classes)
     with torch.no_grad():
         for X_batch, Y_batch in valid_dl:
             X_batch = X_batch.cuda()
@@ -53,19 +54,19 @@ def check_accuracy(valid_dl, model, loss_fn, acc_fn):
             outputs = model(X_batch)
             loss = loss_fn(outputs, Y_batch.long())
             acc = acc_fn(outputs, Y_batch)
-            dice_score = mean_dice_score(outputs, Y_batch)
-
-
+            dice_score, dice_class_scores = mean_dice_score(outputs, Y_batch, classes)
 
 
             running_acc  += acc * cur_batch_sz
             running_loss += loss * cur_batch_sz
             running_dice += dice_score * cur_batch_sz
+            running_class_dice += dice_class_scores * cur_batch_sz
     average_loss = running_loss / len(valid_dl.dataset)
     average_acc = running_acc / len(valid_dl.dataset)
     average_dice_sc = running_dice / len(valid_dl.dataset)
+    average_dice_class_sc = running_class_dice / len(valid_dl.dataset)
     print('{} Loss: {:.4f} PxAcc: {} Dice: {}'.format("Validation", average_loss, average_acc, average_dice_sc))
-    return average_loss, average_acc, average_dice_sc
+    return average_loss, average_acc, average_dice_sc, average_dice_class_sc
 
 
 def print_epoch_stats(epoch, epochs, avg_train_loss, avg_train_acc):
@@ -74,8 +75,14 @@ def print_epoch_stats(epoch, epochs, avg_train_loss, avg_train_acc):
     print('{} Loss: {:.4f} PxAcc: {}'.format("Train", avg_train_loss, avg_train_acc))
     print('-' * 10)
 
+def numpy_to_class_dict(np_arr):
+    ret_dict = {}
+    for val in np_arr:
+        ret_dict[f'Class {val+1}'] = val
+    return ret_dict
 
-def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1, tb_writer=None, hparam_log=None):
+
+def train(model, classes, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1, tb_writer=None, hparam_log=None):
     start = time.time()
     model.cuda()
     len_train_ds = len(train_dl.dataset)
@@ -94,7 +101,7 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1, tb_wr
         model.train()
         weight = epoch/epochs
         print("weight", weight)
-        loss_fn = weighted_combined_loss(nn.CrossEntropyLoss(), dice_loss, weight)
+        #loss_fn = weighted_combined_loss(nn.CrossEntropyLoss(), dice_loss, weight)
         print('Epoch {}/{}'.format(epoch, epochs - 1))
         print('-' * 10)
         running_loss = 0.0
@@ -116,7 +123,7 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1, tb_wr
             if step % 5 == 0:
                 print('Current step: {}  Loss: {}  Acc: {} '.format(step, loss, acc))
 
-        avg_val_loss, avg_val_acc, avg_dice = check_accuracy(valid_dl, model, loss_fn, acc_fn)
+        avg_val_loss, avg_val_acc, avg_dice, avg_cl_dice = check_accuracy(valid_dl, model, loss_fn, acc_fn, classes)
         if avg_dice > highest_dice:
             highest_dice = avg_dice
             hparam_log["hgst dice"] = highest_dice
@@ -125,6 +132,7 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1, tb_wr
 
         tb_writer.add_scalar("Val CE loss", avg_val_loss, seen_train_ex)
         tb_writer.add_scalar("Val dice acc", avg_dice, seen_train_ex)
+        tb_writer.add_scalars("Val class dice acc", numpy_to_class_dict(avg_cl_dice), seen_train_ex)
         
 
         avg_train_loss = running_loss / len_train_ds
@@ -161,10 +169,6 @@ def main():
 
     hparam_log = {}
 
-
-
-
-
     #enable if you want to see some plotting
     visual_debug = True
 
@@ -180,16 +184,15 @@ def main():
     #learning rate
     learn_rate = cfg["learning_rate"]
 
-    train_dir = cfg["train_dir"]
-    val_dir = cfg["val_dir"]
-    test_dir = cfg["test_dir"]
-
     train_transforms = cfg["train_transforms"]
     val_transforms = cfg["val_transforms"]
     model_file = cfg["model"]
     dataset = cfg["dataset"]
+    channel_ratio = cfg["channel_ratio"]
+    #isotropic = cfg["isotropic"]
 
     h_params = {"bs": bs, "lr": learn_rate}
+    classes = 3
 
 
 
@@ -206,40 +209,25 @@ def main():
     #sets the matplotlib display backend (most likely not needed)
     mp.use('TkAgg', force=True)
 
-    train_ds = CamusResizedDataset(train_dir, transforms=train_transforms)
-    val_ds = CamusResizedDataset(val_dir, transforms=val_transforms)
-    test_ds = CamusResizedDataset(test_dir)
 
+    train_loader, val_loader, classes = get_dataloaders(dataset, bs, train_transforms, val_transforms)
 
-    #split the training dataset and initialize the data loaders
-    train_data = DataLoader(dataset=train_ds, batch_size=bs, shuffle=True)
-    valid_data = DataLoader(dataset=val_ds, batch_size=bs, shuffle=True)
-
-
-    """
-
-    if visual_debug:
-        fig, ax = plt.subplots(1,2)
-        ax[0].imshow(train_ds.get_np_img(150))
-        ax[1].imshow(train_ds.get_np_mask(150))
-        plt.show()
-    """
 
     # build the Unet2D with one channel as input and 2 channels as output
     model_path = os.path.join("models",dataset)
     model_import = import_model_from_path(model_file, model_path)
 
-    unet = model_import.Unet2D(1,2,channel_ratio=2)
+    unet = model_import.Unet2D(1,4)
     unet.cuda()
 
     #loss function and optimizer
     loss_fn = nn.CrossEntropyLoss()
-    loss_fn2 = dice_loss
-    loss_fn3 = weighted_combined_loss(loss_fn, loss_fn2)
+    #loss_fn2 = dice_loss
+    #loss_fn3 = weighted_combined_loss(loss_fn, loss_fn2)
     opt = torch.optim.Adam(unet.parameters(), lr=learn_rate)
 
     #do some training
-    train(unet, train_data, valid_data, loss_fn3, opt, mean_pixel_accuracy, epochs=epochs_val, tb_writer=tb_writer, hparam_log=hparam_log)
+    train(unet, classes, train_loader, val_loader, loss_fn, opt, mean_pixel_accuracy, epochs=epochs_val, tb_writer=tb_writer, hparam_log=hparam_log)
 
 
     dict_to_numpy(hparam_log)

@@ -1,11 +1,27 @@
 import torch
 import numpy as np
+import matplotlib.pyplot as plt
+
+
+
+def dice_scores(segmentation, ground_truth, classes):
+    dice_scores = []
+    for i in range(1,classes+1):
+        binary_gt = (ground_truth == i).astype(np.uint8)
+        binary_seg = (segmentation == i).astype(np.uint8)
+        intersect = np.logical_and(binary_gt, binary_seg)
+        sum_binary_gt = np.sum(binary_gt)
+        sum_binary_seg = np.sum(binary_seg)
+        class_dice_score = np.sum(intersect)*2 / (sum_binary_gt+sum_binary_seg)
+        dice_scores.append(class_dice_score)
+    dice_scores = np.array(dice_scores)
+    return dice_scores
 
 
 
 
-def dice_score(segmentation, ground_truth):
-    return np.sum(segmentation[ground_truth==1])*2.0 / (np.sum(segmentation) + np.sum(ground_truth))
+
+
 
 def image_stats(img):
     data_type = type(img[0][0])
@@ -41,6 +57,7 @@ def get_mask_from_tensor(tensor, index, mask_index):
 def dice_loss(logits, target):
     input = torch.functional.F.softmax(logits, 1)
     smooth = 1.
+    
     input = input[:,1,:,:]
     #print(input.shape)
     #print(target.shape)
@@ -60,17 +77,21 @@ def weighted_combined_loss(loss_fn1, loss_fn2, weight=0.5):
 
 
 
-def mean_dice_score(pred_batch, Y_batch):
+def mean_dice_score(pred_batch, Y_batch, classes):
     assert(pred_batch.size(0) == Y_batch.size(0))
-    cumulative_scores = 0
+    cumulative_scores = np.zeros(classes)
     for b_idx in range(pred_batch.size(0)):
         mask = predb_to_mask(pred_batch, b_idx).numpy()
         gt_tensor = Y_batch[b_idx].clone()
         gt = gt_tensor.cpu().numpy()
 
-        cumulative_scores += dice_score(mask, gt)
-    avg_dice_score = cumulative_scores / pred_batch.size(0)
-    return avg_dice_score
+        batch_dice_score = dice_scores(mask, gt, classes)
+
+        cumulative_scores += batch_dice_score
+
+    avg_dice_scores = cumulative_scores / pred_batch.size(0)
+    avg_dice_score = np.average(avg_dice_scores)
+    return avg_dice_score, avg_dice_scores
 
 def mean_pixel_accuracy(pred_batch, Y_batch):
     return (pred_batch.argmax(dim=1) == Y_batch.cuda()).float().mean()
