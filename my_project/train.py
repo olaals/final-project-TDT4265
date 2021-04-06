@@ -75,7 +75,7 @@ def print_epoch_stats(epoch, epochs, avg_train_loss, avg_train_acc):
     print('-' * 10)
 
 
-def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1, train_stats=None):
+def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1, tb_writer=None, hparam_log=None):
     start = time.time()
     model.cuda()
     len_train_ds = len(train_dl.dataset)
@@ -86,6 +86,9 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1, train
     best_acc = 0.0
     highest_dice = 0.0
     seen_train_ex_highest_dice = 0
+    hparam_log["hgst dice"] = 0.0
+    hparam_log["hgst dice step"] = 0.0
+    hparam_log["hgst dice tr CE loss"] = 0.0
 
     for epoch in range(epochs):
         model.train()
@@ -105,8 +108,8 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1, train
             step += 1
             seen_train_ex += X_batch.size(0)
 
-            record_stat("Train CE loss", loss, seen_train_ex, train_stats)
-            record_stat("Train px acc", acc, seen_train_ex, train_stats)
+            tb_writer.add_scalar("Train CE loss", loss, seen_train_ex)
+            tb_writer.add_scalar("Train px acc", acc, seen_train_ex)
 
 
 
@@ -116,9 +119,12 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1, train
         avg_val_loss, avg_val_acc, avg_dice = check_accuracy(valid_dl, model, loss_fn, acc_fn)
         if avg_dice > highest_dice:
             highest_dice = avg_dice
+            hparam_log["hgst dice"] = highest_dice
+            hparam_log["hgst dice step"] = seen_train_ex
+            hparam_log["hgst dice tr CE loss"] = loss
 
-        record_stat("Val CE loss", avg_val_loss, seen_train_ex, train_stats)
-        record_stat("Val dice acc", avg_dice, seen_train_ex, train_stats)
+        tb_writer.add_scalar("Val CE loss", avg_val_loss, seen_train_ex)
+        tb_writer.add_scalar("Val dice acc", avg_dice, seen_train_ex)
         
 
         avg_train_loss = running_loss / len_train_ds
@@ -128,46 +134,32 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1, train
         print_epoch_stats(epoch, epochs, avg_train_loss, avg_train_acc)
 
 
+    hparam_log["last step"] = seen_train_ex
+    hparam_log["last dice"] = avg_dice
+    hparam_log["last train loss"] = avg_train_loss
     time_elapsed = time.time() - start
     print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))    
     
 
-def record_stat(stat, value, global_step, train_stats):
-    train_stats[stat]["value"].append(value)
-    train_stats[stat]["step"].append(global_step)
 
-def init_stats_dict():
-    stats_dict = {}
-    stats_dict["type"] = "train stat"
-    stats_dict["value"] = []
-    stats_dict["step"] = []
-    return stats_dict
 
-def init_train_stats_dict(train_stats):
-    train_stats["Train CE loss"] = init_stats_dict()
-    train_stats["Train px acc"] = init_stats_dict()
-    train_stats["Val CE loss"] = init_stats_dict()
-    train_stats["Val px acc"] = init_stats_dict()
-    train_stats["Val dice acc"] = init_stats_dict()
 
-def dict_to_numpy(train_stats):
-    for key in train_stats:
-        if train_stats[key]["type"] == "train stat":
-            orig_list = train_stats[key]["value"]
-            to_cpu = torch.tensor(orig_list, device = 'cpu')
-            train_stats[key]["value"] = np.array(to_cpu)
-
-def write_to_tensorboard(train_stats, tb_writer):
-    for key in train_stats:
-        for val, step in train_stats[key]:
-            tb_writer.add_scalar(key, val, step)
-
+def dict_to_numpy(hparam_dict):
+    hparam_dict["last train loss"] = hparam_dict["last train loss"].item()
+    for key in hparam_dict:
+        try:
+            hparam_dict[key] = hparam_dict[key].item()
+        except:
+            pass
+        try:
+            hparam_dict[key] = hparam_dict[key].detach().cpu().numpy()
+        except:
+            pass
 
 
 def main():
 
-    train_stats = {}
-    init_train_stats_dict(train_stats)
+    hparam_log = {}
 
 
 
@@ -196,6 +188,8 @@ def main():
     val_transforms = cfg["val_transforms"]
     model_file = cfg["model"]
     dataset = cfg["dataset"]
+
+    h_params = {"bs": bs, "lr": learn_rate}
 
 
 
@@ -245,14 +239,22 @@ def main():
     opt = torch.optim.Adam(unet.parameters(), lr=learn_rate)
 
     #do some training
-    train(unet, train_data, valid_data, loss_fn3, opt, mean_pixel_accuracy, epochs=epochs_val, train_stats=train_stats)
+    train(unet, train_data, valid_data, loss_fn3, opt, mean_pixel_accuracy, epochs=epochs_val, tb_writer=tb_writer, hparam_log=hparam_log)
 
-    dict_to_numpy(train_stats)
-    print(train_stats)
+
+    dict_to_numpy(hparam_log)
+    highest_dice = hparam_log["hgst dice"]
+    del hparam_log["hgst dice"]
+    highest_dice_train_loss = hparam_log["hgst dice tr CE loss"]
+    del hparam_log["hgst dice tr CE loss"]
+    h_params.update(hparam_log)
+    print(h_params)
+
+
 
     
 
-    #tb_writer.add_hparams({'lr':learn_rate, 'batch size': bs}, {"highest dice": highest_dice})
+    tb_writer.add_hparams(h_params, {"highest dice": highest_dice, "hgst dice tr loss":highest_dice_train_loss})
 
     #predict on the next train batch (is this fair?)
     xb, yb = next(iter(train_data))
