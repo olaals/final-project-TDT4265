@@ -3,10 +3,10 @@ from albumentations.pytorch.transforms import ToTensorV2
 
 def get_config():
     config = {
-        "model": "improved_v1",
-        "epochs": 15,
-        "batch_size": 12,
-        "learning_rate": 3e-3,
+        "model": "improved_v2",
+        "epochs": 20,
+        "batch_size": 8,
+        "learning_rate": 1e-3,
         "input_width": 500,
         "input_height": 500,
         
