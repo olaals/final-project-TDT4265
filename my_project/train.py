@@ -75,7 +75,7 @@ def print_epoch_stats(epoch, epochs, avg_train_loss, avg_train_acc):
     print('-' * 10)
 
 
-def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1, tb_writer=None):
+def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1, train_stats=None):
     start = time.time()
     model.cuda()
     len_train_ds = len(train_dl.dataset)
@@ -105,8 +105,9 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1, tb_wr
             step += 1
             seen_train_ex += X_batch.size(0)
 
-            tb_writer.add_scalar('Training loss', loss, seen_train_ex)
-            tb_writer.add_scalar('Training accuracy', acc, seen_train_ex)
+            record_stat("Train CE loss", loss, seen_train_ex, train_stats)
+            record_stat("Train px acc", acc, seen_train_ex, train_stats)
+
 
 
             if step % 5 == 0:
@@ -115,9 +116,9 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1, tb_wr
         avg_val_loss, avg_val_acc, avg_dice = check_accuracy(valid_dl, model, loss_fn, acc_fn)
         if avg_dice > highest_dice:
             highest_dice = avg_dice
-        tb_writer.add_scalar('Validation loss', avg_val_loss, seen_train_ex)
-        tb_writer.add_scalar('Validation accuracy', avg_val_acc, seen_train_ex)
 
+        record_stat("Val CE loss", avg_val_loss, seen_train_ex, train_stats)
+        record_stat("Val dice acc", avg_dice, seen_train_ex, train_stats)
         
 
         avg_train_loss = running_loss / len_train_ds
@@ -130,18 +131,43 @@ def train(model, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1, tb_wr
     time_elapsed = time.time() - start
     print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))    
     
-    return train_loss, valid_loss, highest_dice
+
+def record_stat(stat, value, global_step, train_stats):
+    train_stats[stat]["value"].append(value)
+    train_stats[stat]["step"].append(global_step)
+
+def init_stats_dict():
+    stats_dict = {}
+    stats_dict["type"] = "train stat"
+    stats_dict["value"] = []
+    stats_dict["step"] = []
+    return stats_dict
 
 def init_train_stats_dict(train_stats):
-    train_stats["Train CE loss"] = []
-    train_stats["Train px acc"] = []
-    train_stats["Val CE loss"] = []
-    train_stats["Val px acc"] = []
-    #trains_stats["V
+    train_stats["Train CE loss"] = init_stats_dict()
+    train_stats["Train px acc"] = init_stats_dict()
+    train_stats["Val CE loss"] = init_stats_dict()
+    train_stats["Val px acc"] = init_stats_dict()
+    train_stats["Val dice acc"] = init_stats_dict()
+
+def dict_to_numpy(train_stats):
+    for key in train_stats:
+        if train_stats[key]["type"] == "train stat":
+            orig_list = train_stats[key]["value"]
+            to_cpu = torch.tensor(orig_list, device = 'cpu')
+            train_stats[key]["value"] = np.array(to_cpu)
+
+def write_to_tensorboard(train_stats, tb_writer):
+    for key in train_stats:
+        for val, step in train_stats[key]:
+            tb_writer.add_scalar(key, val, step)
+
+
 
 def main():
 
     train_stats = {}
+    init_train_stats_dict(train_stats)
 
 
 
@@ -196,12 +222,14 @@ def main():
     valid_data = DataLoader(dataset=val_ds, batch_size=bs, shuffle=True)
 
 
+    """
 
     if visual_debug:
         fig, ax = plt.subplots(1,2)
         ax[0].imshow(train_ds.get_np_img(150))
         ax[1].imshow(train_ds.get_np_mask(150))
         plt.show()
+    """
 
     # build the Unet2D with one channel as input and 2 channels as output
     model_path = os.path.join("models",dataset)
@@ -217,17 +245,14 @@ def main():
     opt = torch.optim.Adam(unet.parameters(), lr=learn_rate)
 
     #do some training
-    train_loss, valid_loss,highest_dice = train(unet, train_data, valid_data, loss_fn3, opt, mean_pixel_accuracy, epochs=epochs_val, tb_writer=tb_writer)
+    train(unet, train_data, valid_data, loss_fn3, opt, mean_pixel_accuracy, epochs=epochs_val, train_stats=train_stats)
 
-    tb_writer.add_hparams({'lr':learn_rate, 'batch size': bs}, {"highest dice": highest_dice})
-    #plot training and validation losses
-    if visual_debug:
-        print("Visual debug")
-        plt.figure(figsize=(10,8))
-        plt.plot(train_loss, label='Train loss')
-        plt.plot(valid_loss, label='Valid loss')
-        plt.legend()
-        plt.show()
+    dict_to_numpy(train_stats)
+    print(train_stats)
+
+    
+
+    #tb_writer.add_hparams({'lr':learn_rate, 'batch size': bs}, {"highest dice": highest_dice})
 
     #predict on the next train batch (is this fair?)
     xb, yb = next(iter(train_data))
