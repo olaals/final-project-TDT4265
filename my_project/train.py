@@ -40,12 +40,20 @@ def train_step(X_batch, Y_batch, optimizer, model, loss_fn, acc_fn):
     return loss, acc
     
 
-def check_accuracy(valid_dl, model, loss_fn, acc_fn, classes):
+def convert_tensor_to_RGB(network_output):
+    x = torch.FloatTensor([[.0, .0, .0], [1.0, .0, .0], [.0, .0, 1.0], [.0, 1.0, .0]])
+    converted_tensor = torch.nn.functional.embedding(network_output, x).permute(2,0,1)
+    return converted_tensor
+
+
+def check_accuracy(valid_dl, model, loss_fn, acc_fn, classes, tb_writer, seen_train_ex):
     model.eval()
     running_loss = 0.0
     running_acc = 0.0
     running_dice = 0.0
     running_class_dice = np.zeros(classes)
+    num_rows_to_plot = 5
+    save_batch = True
     with torch.no_grad():
         for X_batch, Y_batch in valid_dl:
             X_batch = X_batch.cuda()
@@ -55,18 +63,37 @@ def check_accuracy(valid_dl, model, loss_fn, acc_fn, classes):
             loss = loss_fn(outputs, Y_batch.long())
             acc = acc_fn(outputs, Y_batch)
             dice_score, dice_class_scores = mean_dice_score(outputs, Y_batch, classes)
-
-
             running_acc  += acc * cur_batch_sz
             running_loss += loss * cur_batch_sz
             running_dice += dice_score * cur_batch_sz
             running_class_dice += dice_class_scores * cur_batch_sz
+            if save_batch:
+                save_batch = False
+                np_grid = []
+                for i in range(num_rows_to_plot):
+                    input_img = X_batch[i].cpu().float()
+                    input_img = torch.cat([input_img, input_img, input_img])
+                    mask = predb_to_mask(outputs.clone(), i)
+                    mask = convert_tensor_to_RGB(mask)
+                    gt = Y_batch[i].cpu()
+                    gt = convert_tensor_to_RGB(gt)
+                    np_grid.append(input_img)
+                    np_grid.append(mask)
+                    np_grid.append(gt)
+
+                grid = torchvision.utils.make_grid(np_grid, nrow=num_rows_to_plot)
+                tb_writer.add_image("Validation: input, pred, gt", grid, global_step=seen_train_ex)
+
     average_loss = running_loss / len(valid_dl.dataset)
     average_acc = running_acc / len(valid_dl.dataset)
     average_dice_sc = running_dice / len(valid_dl.dataset)
     average_dice_class_sc = running_class_dice / len(valid_dl.dataset)
+    tb_writer.add_scalar("Val CE loss", average_loss, seen_train_ex)
+    tb_writer.add_scalar("Val dice acc", average_dice_sc, seen_train_ex)
+    tb_writer.add_scalar("Val px acc", average_acc, seen_train_ex)
+    tb_writer.add_scalars("Val class dice acc", numpy_to_class_dict(average_dice_class_sc), seen_train_ex)
     print('{} Loss: {:.4f} PxAcc: {} Dice: {}'.format("Validation", average_loss, average_acc, average_dice_sc))
-    return average_loss, average_acc, average_dice_sc, average_dice_class_sc
+    return average_dice_sc 
 
 
 def print_epoch_stats(epoch, epochs, avg_train_loss, avg_train_acc):
@@ -86,8 +113,8 @@ def train(model, classes, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs
     start = time.time()
     model.cuda()
     len_train_ds = len(train_dl.dataset)
-
-    train_loss, valid_loss = [], []
+    print("Len train ds")
+    print(len_train_ds)
     seen_train_ex = 0
 
     best_acc = 0.0
@@ -114,33 +141,21 @@ def train(model, classes, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs
             running_loss += loss*X_batch.size(0)
             step += 1
             seen_train_ex += X_batch.size(0)
-
             tb_writer.add_scalar("Train CE loss", loss, seen_train_ex)
             tb_writer.add_scalar("Train px acc", acc, seen_train_ex)
-
-
-
             if step % 5 == 0:
                 print('Current step: {}  Loss: {}  Acc: {} '.format(step, loss, acc))
 
-        avg_val_loss, avg_val_acc, avg_dice, avg_cl_dice = check_accuracy(valid_dl, model, loss_fn, acc_fn, classes)
+        avg_dice = check_accuracy(valid_dl, model, loss_fn, acc_fn, classes, tb_writer, seen_train_ex)
         if avg_dice > highest_dice:
             highest_dice = avg_dice
             hparam_log["hgst dice"] = highest_dice
             hparam_log["hgst dice step"] = seen_train_ex
             hparam_log["hgst dice tr CE loss"] = loss
 
-        tb_writer.add_scalar("Val CE loss", avg_val_loss, seen_train_ex)
-        tb_writer.add_scalar("Val dice acc", avg_dice, seen_train_ex)
-        tb_writer.add_scalars("Val class dice acc", numpy_to_class_dict(avg_cl_dice), seen_train_ex)
-        
-
         avg_train_loss = running_loss / len_train_ds
         avg_train_acc = running_acc / len_train_ds
-        train_loss.append(avg_train_loss)
-        valid_loss.append(avg_val_acc)
         print_epoch_stats(epoch, epochs, avg_train_loss, avg_train_acc)
-
 
     hparam_log["last step"] = seen_train_ex
     hparam_log["last dice"] = avg_dice
@@ -244,6 +259,7 @@ def main():
 
     tb_writer.add_hparams(h_params, {"highest dice": highest_dice, "hgst dice tr loss":highest_dice_train_loss})
 
+    """
     #predict on the next train batch (is this fair?)
     xb, yb = next(iter(train_data))
     with torch.no_grad():
@@ -276,6 +292,7 @@ def main():
             ax[i,4].imshow(pred_mask)
 
         plt.show()
+    """
 
 if __name__ == "__main__":
     main()
