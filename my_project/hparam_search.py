@@ -29,7 +29,7 @@ def hparam_study(trial):
     cfg = {}
     cfg["custom_logdir"] = os.path.join(HPARAM_STUDY_NAME, f'imsz{im_sz[0]}x{im_sz[1]}')
     cfg["dataset"] = "TTE"
-    cfg["epochs"] = 1
+    cfg["epochs"] = 15
 
 
 
@@ -117,7 +117,7 @@ def main():
 
 
     study = optuna.create_study(direction='maximize')
-    study.optimize(hparam_study, n_trials=30, catch=(RuntimeError,RuntimeError))
+    study.optimize(hparam_study, n_trials=10, catch=(RuntimeError,RuntimeError))
 
     df = study.trials_dataframe()
     df = df.sort_values("value", ascending=False)
