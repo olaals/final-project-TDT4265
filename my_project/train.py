@@ -71,6 +71,7 @@ def check_accuracy(valid_dl, model, loss_fn, acc_fn, classes, tb_writer, seen_tr
             if save_batch:
                 save_batch = False
                 np_grid = []
+                num_rows_to_plot = min(X_batch.size(0), num_rows_to_plot)
                 for i in range(num_rows_to_plot):
                     input_img = X_batch[i].cpu().float()
                     input_img = torch.cat([input_img, input_img, input_img])
@@ -119,6 +120,7 @@ def train(model, classes, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs
     seen_train_ex = 0
 
     best_acc = 0.0
+    runs_without_improved_dice = 0
     highest_dice = 0.0
     seen_train_ex_highest_dice = 0
     hparam_log["hgst dice"] = 0.0
@@ -153,10 +155,16 @@ def train(model, classes, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs
             hparam_log["hgst dice"] = highest_dice
             hparam_log["hgst dice step"] = seen_train_ex
             hparam_log["hgst dice tr CE loss"] = loss
+        else:
+            runs_without_improved_dice +=1
+
 
         avg_train_loss = running_loss / len_train_ds
         avg_train_acc = running_acc / len_train_ds
         print_epoch_stats(epoch, epochs, avg_train_loss, avg_train_acc)
+        if runs_without_improved_dice > 5:
+            print("Dice not improving for 5 epochs, abort training")
+            break
 
     hparam_log["last step"] = seen_train_ex
     hparam_log["last dice"] = avg_dice
@@ -192,12 +200,14 @@ def init_train(cfg):
     val_transforms = cfg["val_transforms"]
     model_file = cfg["model"]
     dataset = cfg["dataset"]
+    channel_ratio = cfg["channel_ratio"]
+    cross_entr_weights = cfg["cross_entr_weights"]
 
     h_params = {"bs": bs, "lr": learn_rate}
 
 
-    if "custom_logdir" in h_params:
-        cust_logdir = h_params["custom_logdir"]
+    if "custom_logdir" in cfg:
+        cust_logdir = cfg["custom_logdir"]
     else:
         cust_logdir = ""
     logdir = os.path.join("tensorboard", dataset, cust_logdir, model_file)
@@ -217,11 +227,11 @@ def init_train(cfg):
     model_path = os.path.join("models",dataset)
     model_import = import_model_from_path(model_file, model_path)
 
-    unet = model_import.Unet2D(1,4)
+    unet = model_import.Unet2D(1,4, channel_ratio)
     unet.cuda()
 
     loss_fn = torchgeometry.losses.dice_loss
-    loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([0.1, 0.3,0.3,0.3]).cuda())
+    loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor(cross_entr_weights).cuda())
     #loss_fn2 = dice_loss
     #loss_fn3 = weighted_combined_loss(loss_fn, loss_fn2)
     opt = torch.optim.Adam(unet.parameters(), lr=learn_rate)
@@ -238,6 +248,8 @@ def init_train(cfg):
     print(h_params)
 
     tb_writer.add_hparams(h_params, {"highest dice": highest_dice, "hgst dice tr loss":highest_dice_train_loss})
+
+    return highest_dice
 
 
 if __name__ == "__main__":
