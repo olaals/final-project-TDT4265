@@ -25,6 +25,7 @@ import time
 import os
 from importlib import import_module
 from torch.utils.tensorboard import SummaryWriter
+import torchgeometry
 
 PRINT_DEBUG = False
 
@@ -180,68 +181,51 @@ def dict_to_numpy(hparam_dict):
             pass
 
 
-def main():
+def init_train(cfg):
 
     hparam_log = {}
 
-    #enable if you want to see some plotting
-    visual_debug = True
-
-    args = add_config_parser() 
-    cfg = get_dict(args, print_config=True)
-
-    #batch size
     bs = cfg["batch_size"]
-
-    #epochs
     epochs_val = cfg["epochs"]
-
-    #learning rate
     learn_rate = cfg["learning_rate"]
-
     train_transforms = cfg["train_transforms"]
     val_transforms = cfg["val_transforms"]
     model_file = cfg["model"]
     dataset = cfg["dataset"]
-    channel_ratio = cfg["channel_ratio"]
-    #isotropic = cfg["isotropic"]
 
     h_params = {"bs": bs, "lr": learn_rate}
-    classes = 3
 
 
+    if "custom_logdir" in h_params:
+        cust_logdir = h_params["custom_logdir"]
+    else:
+        cust_logdir = ""
+    logdir = os.path.join("tensorboard", dataset, cust_logdir, model_file)
 
-    logdir = os.path.join("tensorboard", dataset, model_file)
     try:
         try_number = len(os.listdir(logdir))
     except:
         try_number = 0
+
     logdir_folder = f'N{try_number}_bs{bs}_lr{learn_rate}'
     logdir = os.path.join(logdir, logdir_folder)
-    
+
     tb_writer = SummaryWriter(logdir)
-
-    #sets the matplotlib display backend (most likely not needed)
-    mp.use('TkAgg', force=True)
-
 
     train_loader, val_loader, classes = get_dataloaders(dataset, bs, train_transforms, val_transforms)
 
-
-    # build the Unet2D with one channel as input and 2 channels as output
     model_path = os.path.join("models",dataset)
     model_import = import_model_from_path(model_file, model_path)
 
     unet = model_import.Unet2D(1,4)
     unet.cuda()
 
-    #loss function and optimizer
-    loss_fn = nn.CrossEntropyLoss()
+    loss_fn = torchgeometry.losses.dice_loss
+    loss_fn = torch.nn.CrossEntropyLoss(weight=torch.tensor([0.1, 0.3,0.3,0.3]).cuda())
     #loss_fn2 = dice_loss
     #loss_fn3 = weighted_combined_loss(loss_fn, loss_fn2)
     opt = torch.optim.Adam(unet.parameters(), lr=learn_rate)
 
-    #do some training
     train(unet, classes, train_loader, val_loader, loss_fn, opt, mean_pixel_accuracy, epochs=epochs_val, tb_writer=tb_writer, hparam_log=hparam_log)
 
 
@@ -253,46 +237,10 @@ def main():
     h_params.update(hparam_log)
     print(h_params)
 
-
-
-    
-
     tb_writer.add_hparams(h_params, {"highest dice": highest_dice, "hgst dice tr loss":highest_dice_train_loss})
 
-    """
-    #predict on the next train batch (is this fair?)
-    xb, yb = next(iter(train_data))
-    with torch.no_grad():
-        predb = unet(xb.cuda())
-
-    #show the predicted segmentations
-    max_images_to_show = 4
-    if visual_debug:
-        images_to_show = min(max_images_to_show, bs)
-        fig, ax = plt.subplots(images_to_show,5, figsize=(15,bs*5))
-        for i in range(images_to_show):
-            train_img = batch_to_img(xb,i)
-            print("train_img")
-            image_stats(train_img)
-            gt_img = yb[i].numpy()
-            print("gt_img")
-            image_stats(gt_img)
-
-            bg_mask = get_mask_from_tensor(predb, i,0)
-            pred_mask = get_mask_from_tensor(predb, i,1)
-
-            pred_img = predb_to_mask(predb, i).numpy()
-            print("pred_img")
-            image_stats(pred_img)
-
-            ax[i,0].imshow(train_img)
-            ax[i,1].imshow(gt_img)
-            ax[i,2].imshow(pred_img)
-            ax[i,3].imshow(bg_mask)
-            ax[i,4].imshow(pred_mask)
-
-        plt.show()
-    """
 
 if __name__ == "__main__":
-    main()
+    args = add_config_parser() 
+    cfg = get_dict(args, print_config=True)
+    init_train(cfg)

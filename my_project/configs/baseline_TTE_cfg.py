@@ -6,7 +6,7 @@ def get_config():
         "model": "baseline",
         "epochs": 20,
         "batch_size": 12,
-        "learning_rate": 0.01,
+        "learning_rate": .01,
         "input_width": 500,
         "input_height": 500,
         "channel_ratio": 1,
@@ -15,12 +15,12 @@ def get_config():
         "isotropic": True,
 
         "train_transforms": A.Compose([
-            A.Resize(1024,768),
+            A.Resize(512,384),
             A.Normalize(mean=[0.0],std=[1.0], max_pixel_value=255),
             #ToTensorV2()
             ]),
         "val_transforms": A.Compose([
-            A.Resize(1024,768),
+            A.Resize(512,384),
             A.Normalize(mean=[0.0],std=[1.0], max_pixel_value=255),
             #ToTensorV2()
             ]),
