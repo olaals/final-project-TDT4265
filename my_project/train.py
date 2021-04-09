@@ -127,6 +127,7 @@ def train(model, classes, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs
     hparam_log["hgst dice step"] = 0.0
     hparam_log["hgst dice tr CE loss"] = 0.0
 
+
     for epoch in range(epochs):
         model.train()
         weight = epoch/epochs
