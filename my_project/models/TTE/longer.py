@@ -1,19 +1,26 @@
 import torch
 from torch import nn
+import numpy as np
 
 class Unet2D(nn.Module):
     def __init__(self, in_channels, out_channels, channel_ratio=1):
         super().__init__()
+        ch = np.array([32, 64, 128, 256])
+        ch = channel_ratio*ch
+        ch = ch.round().astype(int)
 
-        self.conv1 = self.contract_block(in_channels, int(32*channel_ratio), 7, 3)
-        self.conv2 = self.contract_block(int(32*channel_ratio), int(64*channel_ratio), 3, 1)
-        self.conv3 = self.contract_block(int(64*channel_ratio), int(128*channel_ratio), 3, 1)
-        self.conv4 = self.contract_block(int(128*channel_ratio), int(256*channel_ratio), 3, 1)
 
-        self.upconv4 = self.expand_block(int(256*channel_ratio), int(128*channel_ratio), 3, 1)
-        self.upconv3 = self.expand_block(int(128*2*channel_ratio), int(64*channel_ratio), 3, 1)
-        self.upconv2 = self.expand_block(int(64*2*channel_ratio), int(32*channel_ratio), 3, 1)
-        self.upconv1 = self.expand_block(int(32*2*channel_ratio), out_channels, 3, 1)
+
+
+        self.conv1 = self.contract_block(in_channels, ch[0], 7, 3)
+        self.conv2 = self.contract_block(ch[0], ch[1], 3, 1)
+        self.conv3 = self.contract_block(ch[1], ch[2], 3, 1)
+        self.conv4 = self.contract_block(ch[2], ch[3], 3, 1)
+
+        self.upconv4 = self.expand_block(ch[3], ch[2], 3, 1)
+        self.upconv3 = self.expand_block(2*ch[2], ch[1], 3, 1)
+        self.upconv2 = self.expand_block(2*ch[1], ch[0], 3, 1)
+        self.upconv1 = self.expand_block(2*ch[0], out_channels, 3, 1)
 
     def __call__(self, x):
         # downsampling part

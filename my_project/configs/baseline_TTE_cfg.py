@@ -13,6 +13,7 @@ def get_config():
         
         "dataset": "TTE",
         "isotropic": True,
+        "cross_entr_weights": [0.1, 0.3, 0.3, 0.3],
 
         "train_transforms": A.Compose([
             A.Resize(512,384),
