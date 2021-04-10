@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from torch import nn
 
 class Unet2D(nn.Module):
@@ -15,8 +16,8 @@ class Unet2D(nn.Module):
         self.conv3 = self.contract_block(ch[1], ch[2], 3, 1)
 
         self.upconv3 = self.expand_block(ch[2], ch[1], 3, 1)
-        self.upconv2 = self.expand_block(2*ch[1], ch[2], 3, 1)
-        self.upconv1 = self.expand_block(2*ch[2], out_channels, 3, 1)
+        self.upconv2 = self.expand_block(2*ch[1], ch[0], 3, 1)
+        self.upconv1 = self.expand_block(2*ch[0], out_channels, 3, 1)
 
     def __call__(self, x):
         # downsampling part

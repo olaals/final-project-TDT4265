@@ -20,19 +20,21 @@ class HparamStudy:
 
         metric = 0.0
 
-        im_sz = (256,192)
+        im_sz = (1024,768)
         #im_sz = trial.suggest_categorical("image size", [(512, 384), (256, 192), (384, 512), (192, 256)])
 
         cfg = {}
         cfg["custom_logdir"] = os.path.join(self.study_name, f'imsz{im_sz[0]}x{im_sz[1]}')
         cfg["dataset"] = "TTE"
-        cfg["epochs"] = 10
+        cfg["epochs"] = 60
 
-        cr_entr_weights = trial.suggest_categorical("cr_entr_weights", ["equal", "weighted"])
+        cr_entr_weights = trial.suggest_categorical("cr_entr_weights", ["equal", "weighted", "heavy_weighted"])
         if cr_entr_weights == "equal":
             cfg["cross_entr_weights"] = [0.25,0.25,0.25,0.25]
         elif cr_entr_weights == "weighted":
             cfg["cross_entr_weights"] = [0.1,0.3,0.3,0.3]
+        elif cr_entr_weights == "heavy_weighted":
+            cfg["cross_entr_weights"] = [0.04,0.32,0.32,0.32]
 
 
         #im_sz = trial.suggest_categorical("image size", [(512, 384), (256, 192), (384, 512), (192, 256)])
@@ -44,7 +46,7 @@ class HparamStudy:
             ])
 
 
-        model = trial.suggest_categorical("model", ["baseline", "longer"])
+        model = trial.suggest_categorical("model", ["baseline", "wide", "longer"])
         cfg["model"] = model
         
         # HYPERPARAMS #
@@ -53,8 +55,10 @@ class HparamStudy:
 
         learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-1, log=True)
         cfg["learning_rate"] = learning_rate
+        lr_patience = trial.suggest_int("lr_patience", 3, 10)
+        cfg["lr_patience"] = lr_patience
 
-        channel_ratio = trial.suggest_categorical("channel_ratio", [1.0, 1.2, 1.4, 1.6, 1.8, 2.0])
+        channel_ratio = trial.suggest_categorical("channel_ratio", [1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.4, 2.6, 3.0])
         cfg["channel_ratio"] = channel_ratio
 
 
@@ -66,14 +70,29 @@ class HparamStudy:
 
         use_shift_scale_rotate = trial.suggest_int("shift_sc_rot", 0, 1)
         if use_shift_scale_rotate:
+            cfg["trfm_rot_scale"] = True
             train_transforms.append(A.ShiftScaleRotate(
                 shift_limit=0.0, 
                 scale_limit=0.2, 
                 rotate_limit=15, p=0.7))
+        else:
+            cfg["trfm_rot_scale"] = False
 
         use_blur = trial.suggest_int("blur", 0, 1)
         if use_blur:
+            cfg["trfm_blur"] = True
             train_transforms.append(A.Blur(blur_limit=5, always_apply=False, p=0.5))
+        else:
+            cfg["trfm_blur"] = False
+
+
+        use_brightness_contrast = trial.suggest_int("contrast", 0, 1)
+        if use_brightness_contrast:
+            cfg["trfm_contr"] = True
+            train_transforms.append(A.RandomBrightnessContrast (brightness_limit=0.2, contrast_limit=0.2, p=0.3))
+        else:
+            cfg["trfm_contr"] = False
+
 
         cfg["train_transforms"] = A.Compose(train_transforms)
 

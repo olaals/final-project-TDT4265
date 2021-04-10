@@ -3,7 +3,7 @@ from albumentations.pytorch.transforms import ToTensorV2
 
 def get_config():
     config = {
-        "model": "baseline",
+        "model": "wide",
         "epochs": 5,
         "batch_size": 36,
         "learning_rate": 5.0,

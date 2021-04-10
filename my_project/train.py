@@ -4,6 +4,7 @@ sys.path.append("models")
 from file_io import *
 from train_utils import *
 
+
 import numpy as np
 import pandas as pd
 import matplotlib as mp
@@ -14,6 +15,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import Dataset, DataLoader, sampler
 from torch import nn
+from random_word import RandomWords
 
 from dataloaders import get_dataloaders, DatasetLoader, CamusResizedDataset, TTEDataset
 #from Unet2D import Unet2D
@@ -53,7 +55,7 @@ def check_accuracy(valid_dl, model, loss_fn, acc_fn, classes, tb_writer, seen_tr
     running_acc = 0.0
     running_dice = 0.0
     running_class_dice = np.zeros(classes)
-    num_rows_to_plot = 5
+    num_rows_to_plot = 4
     save_batch = True
     with torch.no_grad():
         for X_batch, Y_batch in valid_dl:
@@ -111,7 +113,7 @@ def numpy_to_class_dict(np_arr):
     return ret_dict
 
 
-def train(model, classes, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs=1, tb_writer=None, hparam_log=None):
+def train(model, classes, train_dl, valid_dl, loss_fn, optimizer, scheduler, acc_fn, epochs=1, tb_writer=None, hparam_log=None):
     start = time.time()
     model.cuda()
     len_train_ds = len(train_dl.dataset)
@@ -147,7 +149,7 @@ def train(model, classes, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs
             seen_train_ex += X_batch.size(0)
             tb_writer.add_scalar("Train CE loss", loss, seen_train_ex)
             tb_writer.add_scalar("Train px acc", acc, seen_train_ex)
-            if step % 5 == 0:
+            if step % 25 == 0:
                 print('Current step: {}  Loss: {}  Acc: {} '.format(step, loss, acc))
 
         avg_dice = check_accuracy(valid_dl, model, loss_fn, acc_fn, classes, tb_writer, seen_train_ex)
@@ -162,9 +164,10 @@ def train(model, classes, train_dl, valid_dl, loss_fn, optimizer, acc_fn, epochs
 
         avg_train_loss = running_loss / len_train_ds
         avg_train_acc = running_acc / len_train_ds
+        scheduler.step(avg_train_loss)
         print_epoch_stats(epoch, epochs, avg_train_loss, avg_train_acc)
-        if runs_without_improved_dice > 5:
-            print("Dice not improving for 5 epochs, abort training")
+        if runs_without_improved_dice > 12:
+            print("Dice not improving for 12 epochs, abort training")
             break
 
     hparam_log["last step"] = seen_train_ex
@@ -197,6 +200,7 @@ def init_train(cfg):
     bs = cfg["batch_size"]
     epochs_val = cfg["epochs"]
     learn_rate = cfg["learning_rate"]
+    lr_patience = cfg["lr_patience"]
     train_transforms = cfg["train_transforms"]
     val_transforms = cfg["val_transforms"]
     model_file = cfg["model"]
@@ -204,9 +208,11 @@ def init_train(cfg):
     channel_ratio = cfg["channel_ratio"]
     cross_entr_weights = cfg["cross_entr_weights"]
 
-    h_params = {"bs": bs, "lr": learn_rate}
+    #h_params = {"bs": bs, "lr": learn_rate}
 
 
+
+    
     if "custom_logdir" in cfg:
         cust_logdir = cfg["custom_logdir"]
     else:
@@ -218,10 +224,13 @@ def init_train(cfg):
     except:
         try_number = 0
 
-    logdir_folder = f'N{try_number}_bs{bs}_lr{learn_rate}'
+    r = RandomWords()
+    logdir_folder = f'N{try_number}_{r.get_random_word()}'
     logdir = os.path.join(logdir, logdir_folder)
+    print("logdir:", logdir)
 
     tb_writer = SummaryWriter(logdir)
+
 
     train_loader, val_loader, classes = get_dataloaders(dataset, bs, train_transforms, val_transforms)
 
@@ -236,19 +245,21 @@ def init_train(cfg):
     #loss_fn2 = dice_loss
     #loss_fn3 = weighted_combined_loss(loss_fn, loss_fn2)
     opt = torch.optim.Adam(unet.parameters(), lr=learn_rate)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=3, verbose=True)
 
-    train(unet, classes, train_loader, val_loader, loss_fn, opt, mean_pixel_accuracy, epochs=epochs_val, tb_writer=tb_writer, hparam_log=hparam_log)
 
+    train(unet, classes, train_loader, val_loader, loss_fn, opt, scheduler, mean_pixel_accuracy, epochs=epochs_val, tb_writer=tb_writer, hparam_log=hparam_log)
+
+
+    del cfg["train_transforms"]
+    del cfg["val_transforms"]
+    del cfg["cross_entr_weights"]
+
+    highest_dice = hparam_log["hgst dice"]
 
     dict_to_numpy(hparam_log)
-    highest_dice = hparam_log["hgst dice"]
-    del hparam_log["hgst dice"]
-    highest_dice_train_loss = hparam_log["hgst dice tr CE loss"]
-    del hparam_log["hgst dice tr CE loss"]
-    h_params.update(hparam_log)
-    print(h_params)
 
-    tb_writer.add_hparams(h_params, {"highest dice": highest_dice, "hgst dice tr loss":highest_dice_train_loss})
+    tb_writer.add_hparams(cfg, hparam_log)
 
     return highest_dice
 
