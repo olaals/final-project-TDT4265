@@ -1,0 +1,10 @@
+*.pth filter=lfs diff=lfs merge=lfs -text
+tensorboard filter=lfs diff=lfs merge=lfs -text
+tensorboard/CAMUS_resized filter=lfs diff=lfs merge=lfs -text
+tensorboard/test filter=lfs diff=lfs merge=lfs -text
+*.0 filter=lfs diff=lfs merge=lfs -text
+*.png filter=lfs diff=lfs merge=lfs -text
+*.pt filter=lfs diff=lfs merge=lfs -text
+*.csv filter=lfs diff=lfs merge=lfs -text
+hparam_search/** filter=lfs diff=lfs merge=lfs -text
+tensorboard/** filter=lfs diff=lfs merge=lfs -text
