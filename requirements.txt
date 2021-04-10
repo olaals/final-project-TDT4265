@@ -3,3 +3,4 @@ scikit-learn
 optuna
 torch
 torchgeometry
+random-word

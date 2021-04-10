@@ -50,7 +50,7 @@ class HparamStudy:
         cfg["model"] = model
         
         # HYPERPARAMS #
-        batch_size = trial.suggest_categorical("batch_sz", [4, 8,16, 32])
+        batch_size = trial.suggest_categorical("batch_sz", [4, 8,16])
         cfg["batch_size"] = batch_size
 
         learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-1, log=True)
