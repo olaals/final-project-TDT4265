@@ -56,7 +56,7 @@ def check_accuracy(valid_dl, model, loss_fn, acc_fn, classes, tb_writer, seen_tr
     running_dice = 0.0
     running_class_dice = np.zeros(classes)
     num_rows_to_plot = 4
-    save_batch = True
+    save_batch = False
     with torch.no_grad():
         for X_batch, Y_batch in valid_dl:
             X_batch = X_batch.cuda()
@@ -74,6 +74,7 @@ def check_accuracy(valid_dl, model, loss_fn, acc_fn, classes, tb_writer, seen_tr
                 save_batch = False
                 np_grid = []
                 num_rows_to_plot = min(X_batch.size(0), num_rows_to_plot)
+                
                 for i in range(num_rows_to_plot):
                     input_img = X_batch[i].cpu().float()
                     input_img = torch.cat([input_img, input_img, input_img])
@@ -121,6 +122,8 @@ def train(model, classes, train_dl, valid_dl, loss_fn, optimizer, scheduler, acc
     print(len_train_ds)
     seen_train_ex = 0
 
+    avg_dice = 0.0
+    avg_train_loss = 0.0
     best_acc = 0.0
     runs_without_improved_dice = 0
     highest_dice = 0.0

@@ -20,13 +20,13 @@ class HparamStudy:
 
         metric = 0.0
 
-        im_sz = (1024,768)
+        im_sz = (256,192)
         #im_sz = trial.suggest_categorical("image size", [(512, 384), (256, 192), (384, 512), (192, 256)])
 
         cfg = {}
         cfg["custom_logdir"] = os.path.join(self.study_name, f'imsz{im_sz[0]}x{im_sz[1]}')
         cfg["dataset"] = "TTE"
-        cfg["epochs"] = 60
+        cfg["epochs"] = 0
 
         cr_entr_weights = trial.suggest_categorical("cr_entr_weights", ["equal", "weighted", "heavy_weighted"])
         if cr_entr_weights == "equal":
