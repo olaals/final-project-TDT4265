@@ -20,13 +20,13 @@ class HparamStudy:
 
         metric = 0.0
 
-        im_sz = (256,192)
+        im_sz = (384,512)
         #im_sz = trial.suggest_categorical("image size", [(512, 384), (256, 192), (384, 512), (192, 256)])
 
         cfg = {}
         cfg["custom_logdir"] = os.path.join(self.study_name, f'imsz{im_sz[0]}x{im_sz[1]}')
         cfg["dataset"] = "TTE"
-        cfg["epochs"] = 0
+        cfg["epochs"] = 100
 
         cr_entr_weights = trial.suggest_categorical("cr_entr_weights", ["equal", "weighted", "heavy_weighted"])
         if cr_entr_weights == "equal":
@@ -53,7 +53,7 @@ class HparamStudy:
         batch_size = trial.suggest_categorical("batch_sz", [4, 8,16])
         cfg["batch_size"] = batch_size
 
-        learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-1, log=True)
+        learning_rate = trial.suggest_float("learning_rate", 1e-4, 1e-2, log=True)
         cfg["learning_rate"] = learning_rate
         lr_patience = trial.suggest_int("lr_patience", 3, 10)
         cfg["lr_patience"] = lr_patience
