@@ -1,6 +1,13 @@
+optuna
+tensorboard
+torchvision
+albumentations
+simpleitk
+imageio
 rawpy
 scikit-learn
 optuna
-torch
 torchgeometry
 random-word
+matplotlib
+pandas

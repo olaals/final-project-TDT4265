@@ -77,4 +77,58 @@ def get_all_patients_imgs(path, isotropic=False):
         train_gt_list += load_patient_dir(patient_path, isotropic)
     return train_gt_list
 
+if __name__ == '__main__':
+    input_gt_list = get_all_patients_imgs("datasets/TTE/train")
+    print(len(input_gt_list))
+    bg_list = []
+    cl1_list = []
+    cl2_list = []
+    cl3_list = []
+    for input,gt in input_gt_list:
+        total = gt.shape[0]*gt.shape[1]*1.0
+        cl1 = np.sum(gt==1)
+        print("cl1",cl1)
+        cl2 = np.sum(gt==2)
+        print("cl2",cl2)
+        cl3 = np.sum(gt==3)
+        print("cl3",cl3)
+        bg = total-cl1-cl2-cl3
+        print("bg",bg)
+        print("total", total)
+
+        fraction_bg = bg/total
+        fraction_cl1 = cl1/total
+        fraction_cl2 = cl2/total
+        fraction_cl3 = cl3/total
+
+        times_bg = 1/fraction_bg
+        times_cl1 = 1/fraction_cl1
+        times_cl2 = 1/fraction_cl2
+        times_cl3 = 1/fraction_cl3
+        sum_times = times_bg+times_cl1+times_cl2+times_cl3
+
+        bg_list.append(times_bg/sum_times)
+        cl1_list.append(times_cl1/sum_times)
+        cl2_list.append(times_cl2/sum_times)
+        cl3_list.append(times_cl3/sum_times)
+
+        plt.imshow(gt)
+        plt.show()
+
+    bg_list = np.array(bg_list)
+    cl1_list = np.array(cl1_list)
+    cl2_list = np.array(cl2_list)
+    cl3_list = np.array(cl3_list)
+    print(np.average(bg_list))
+    print(np.average(cl1_list))
+    print(np.average(cl2_list))
+    print(np.average(cl3_list))
+
+
+        
+
+
+
+
+    
 

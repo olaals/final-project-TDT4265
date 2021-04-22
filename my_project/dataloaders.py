@@ -11,6 +11,7 @@ from pathlib import Path
 from torch.utils.data import Dataset, DataLoader, sampler
 from PIL import Image
 import matplotlib.pyplot as plt
+from TEE_loader import get_all_TEE_images_and_gt
 
 def get_dataloaders(dataset, batch_size, train_transforms, val_transforms):
     train_path = os.path.join("datasets", dataset, "train")
@@ -19,18 +20,68 @@ def get_dataloaders(dataset, batch_size, train_transforms, val_transforms):
         train_ds = TTEDataset(train_path, transforms=train_transforms)
         val_ds = TTEDataset(val_path, transforms=val_transforms)
         train_loader = DataLoader(train_ds, batch_size, shuffle=True)
-        val_loader = DataLoader(val_ds, batch_size, shuffle=True)
+        val_loader = DataLoader(val_ds, batch_size, shuffle=False)
         classes = 3
 
     if dataset == "CAMUS_resized":
         train_ds = CamusResizedDataset(train_path, transforms=train_transforms)
         val_ds = CamusResizedDataset(train_path, transforms=val_transforms)
         train_loader = DataLoader(train_ds, batch_size, shuffle=True)
-        val_loader = DataLoader(val_ds, batch_size, shuffle=True)
+        val_loader = DataLoader(val_ds, batch_size, shuffle=False)
         classes = 1
 
     return train_loader, val_loader, classes
 
+def get_test_loader(dataset, batch_size, val_transforms):
+    if dataset == "TTE":
+        test_path = os.path.join("datasets", dataset, "test")
+        test_ds = TTEDataset(test_path, transforms=val_transforms)
+        test_loader = DataLoader(test_ds, batch_size, shuffle=False)
+        classes = 3
+    elif dataset == 'TEE':
+        test_path = os.path.join("datasets", dataset)
+        test_ds = TEEDataset(test_path, val_transforms)
+        test_loader = DataLoader(test_ds, batch_size, shuffle=False)
+        classes = 3
+
+    return test_loader, classes
+
+
+
+
+class TEEDataset(Dataset):
+    def __init__(self, TEE_dir, 
+            transforms
+            ):
+        super().__init__()
+        self.transforms = transforms
+        self.input_gt_imgs_list = get_all_TEE_images_and_gt(TEE_dir)
+        print(len(self.input_gt_imgs_list))
+
+
+    def __len__(self):
+        return len(self.input_gt_imgs_list)
+
+    def __getitem__(self, index):
+        input_img, gt_img = self.input_gt_imgs_list[index]
+
+
+        if self.transforms:
+            transformed = self.transforms(image=input_img,mask=gt_img)
+            input_img = transformed["image"]
+            gt_img = transformed["mask"]
+
+        input_img = np.expand_dims(input_img,0)
+        input_img = torch.tensor(input_img, dtype=torch.float32)
+        gt_img = torch.tensor(gt_img, dtype=torch.torch.int64)
+        
+        return input_img, gt_img
+
+    def get_np_img(self, index):
+        return self.input_gt_imgs_list[index][0]
+
+    def get_np_mask(self, index):
+        return self.input_gt_imgs_list[index][1]
 
 
 class TTEDataset(Dataset):

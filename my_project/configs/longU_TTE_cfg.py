@@ -2,7 +2,7 @@ import albumentations as A
 from albumentations.pytorch.transforms import ToTensorV2
 
 
-model = "longer"
+model = "longU"
 epochs = 3
 batch_size = 8
 learning_rate = 0.001

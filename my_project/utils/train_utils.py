@@ -3,6 +3,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
+def convert_tensor_to_RGB(network_output):
+    x = torch.FloatTensor([[.0, .0, .0], [1.0, .0, .0], [.0, .0, 1.0], [.0, 1.0, .0]])
+    converted_tensor = torch.nn.functional.embedding(network_output, x).permute(2,0,1)
+    return converted_tensor
+
 
 def dice_scores(segmentation, ground_truth, classes):
     dice_scores = []
@@ -12,6 +17,8 @@ def dice_scores(segmentation, ground_truth, classes):
         intersect = np.logical_and(binary_gt, binary_seg)
         sum_binary_gt = np.sum(binary_gt)
         sum_binary_seg = np.sum(binary_seg)
+        if sum_binary_gt == 0:
+            continue
         class_dice_score = np.sum(intersect)*2 / (sum_binary_gt+sum_binary_seg)
         dice_scores.append(class_dice_score)
     dice_scores = np.array(dice_scores)

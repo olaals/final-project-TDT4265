@@ -2,18 +2,18 @@ import albumentations as A
 from albumentations.pytorch.transforms import ToTensorV2
 
 
-model = "longer"
-epochs = 3
+model = "unet_normal"
+epochs = 25
 batch_size = 8
 learning_rate = 0.001
 lr_patience = 3
-channel_ratio = 1.0
+channel_ratio = 2.0
 dataset = "TTE"
 cross_entr_weights = [0.1,0.3,0.3,0.3]
-image_size = (352,288)
+image_size = (256,192)
 train_transforms = A.Compose([
             A.Resize(image_size[0],image_size[1]),
-            A.CLAHE (clip_limit=(3.0,3.0), tile_grid_size=(8, 8), always_apply=True),
+            #A.CLAHE (clip_limit=(3.0,3.0), tile_grid_size=(8, 8), always_apply=True),
             #A.Blur(blur_limit=(5,5), always_apply=True),
             #A.RandomBrightnessContrast (brightness_limit=0.0, contrast_limit=(0.25, 0.25), always_apply=True),
             A.Normalize(mean=[0.0],std=[1.0], max_pixel_value=255),
@@ -26,7 +26,7 @@ train_transforms = A.Compose([
 
 val_transforms = A.Compose([
             A.Resize(image_size[0],image_size[1]),
-            A.CLAHE (clip_limit=(3.0,3.0), tile_grid_size=(8, 8), always_apply=True),
+            #A.CLAHE (clip_limit=(3.0,3.0), tile_grid_size=(8, 8), always_apply=True),
             #A.Blur(blur_limit=(5,5), always_apply=True),
             #A.RandomBrightnessContrast (brightness_limit=0.0, contrast_limit=(0.25,0.25), always_apply=True),
             A.Normalize(mean=[0.0],std=[1.0], max_pixel_value=255),

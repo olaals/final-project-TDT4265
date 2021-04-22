@@ -20,81 +20,98 @@ class HparamStudy:
 
         metric = 0.0
 
-        im_sz = (384,512)
-        #im_sz = trial.suggest_categorical("image size", [(512, 384), (256, 192), (384, 512), (192, 256)])
+        im_sz = trial.suggest_categorical("image size", [(128, 96),(96,128),(352, 288), (288,352), (256, 192), (192, 256)])
+        #im_sz = (352,288)
 
         cfg = {}
         cfg["custom_logdir"] = os.path.join(self.study_name, f'imsz{im_sz[0]}x{im_sz[1]}')
         cfg["dataset"] = "TTE"
-        cfg["epochs"] = 100
+        cfg["epochs"] = 50
+        cfg["image_width"] = im_sz[0]
+        cfg["image_height"] = im_sz[1]
 
-        cr_entr_weights = trial.suggest_categorical("cr_entr_weights", ["equal", "weighted", "heavy_weighted"])
+        #cr_entr_weights = trial.suggest_categorical("cr_entr_weights", ["equal", "weighted", "heavy_weighted"])
+        cr_entr_weights = trial.suggest_categorical("cr_entr_weights", ["weighted", "intuition"])
         if cr_entr_weights == "equal":
             cfg["cross_entr_weights"] = [0.25,0.25,0.25,0.25]
         elif cr_entr_weights == "weighted":
             cfg["cross_entr_weights"] = [0.1,0.3,0.3,0.3]
         elif cr_entr_weights == "heavy_weighted":
             cfg["cross_entr_weights"] = [0.04,0.32,0.32,0.32]
+        elif cr_entr_weights == "calculated":
+            cfg["cross_entr_weights"] = [0.02857,0.26576,0.2369,0.4688]
+        elif cr_entr_weights == "intuition":
+            cfg["cross_entr_weights"] = [0.1,0.35,0.2,0.35]
+
+
 
 
         #im_sz = trial.suggest_categorical("image size", [(512, 384), (256, 192), (384, 512), (192, 256)])
 
 
-        cfg["val_transforms"] = A.Compose([
-            A.Resize(im_sz[0],im_sz[1]),
-            A.Normalize(mean=[0.0],std=[1.0], max_pixel_value=255),
-            ])
 
-
-        model = trial.suggest_categorical("model", ["baseline", "wide", "longer"])
+        model = trial.suggest_categorical("model", ["multiinput", "multiinput_longer"])
         cfg["model"] = model
         
         # HYPERPARAMS #
-        batch_size = trial.suggest_categorical("batch_sz", [4, 8,16])
+        batch_size = trial.suggest_categorical("batch_sz", [4, 8])
         cfg["batch_size"] = batch_size
 
-        learning_rate = trial.suggest_float("learning_rate", 1e-4, 1e-2, log=True)
+        learning_rate = trial.suggest_float("learning_rate", 1e-3, 3e-3, log=True)
         cfg["learning_rate"] = learning_rate
-        lr_patience = trial.suggest_int("lr_patience", 3, 10)
-        cfg["lr_patience"] = lr_patience
 
-        channel_ratio = trial.suggest_categorical("channel_ratio", [1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.4, 2.6, 3.0])
+        cfg["lr_patience"] = 3
+
+        channel_ratio = trial.suggest_categorical("channel_ratio", [2.0, 2.4, 2.6, 2.8])
         cfg["channel_ratio"] = channel_ratio
 
 
-        # TRAIN TRANSFORM HP #
+        # TRANSFORM HP #
         train_transforms = []
-
+        val_transforms = []
         train_transforms.append(A.Resize(im_sz[0],im_sz[1]))
-        train_transforms.append(A.Normalize(mean=[0.0],std=[1.0], max_pixel_value=255))
+        val_transforms.append(A.Resize(im_sz[0], im_sz[1]))
+
+
+        #use_blur = trial.suggest_categorical("blur", ["gaussian", "normal", "none", "median"])
+        use_blur=False
+        if use_blur == "normal":
+            train_transforms.append(A.Blur(blur_limit=(5,5), always_apply=True))
+            val_transforms.append(A.Blur(blur_limit=(5,5), always_apply=True))
+        elif use_blur == "gaussian":
+            train_transforms.append(A.GaussianBlur(blur_limit=(5,5), always_apply=True))
+            val_transforms.append(A.GaussianBlur(blur_limit=(5,5), always_apply=True))
+        elif use_blur == "median":
+            train_transforms.append(A.MedianBlur(blur_limit=(5,5), always_apply=True))
+            val_transforms.append(A.MedianBlur(blur_limit=(5,5), always_apply=True))
+
+
+
+        #use_clahe = trial.suggest_int("clahe", 0, 1)
+        use_clahe = False
+        if use_clahe:
+            train_transforms.append(A.CLAHE (clip_limit=(3.0,3.0), tile_grid_size=(8, 8), always_apply=True))
+            val_transforms.append(A.CLAHE (clip_limit=(3.0,3.0), tile_grid_size=(8, 8), always_apply=True))
+
+
 
         use_shift_scale_rotate = trial.suggest_int("shift_sc_rot", 0, 1)
         if use_shift_scale_rotate:
-            cfg["trfm_rot_scale"] = True
             train_transforms.append(A.ShiftScaleRotate(
                 shift_limit=0.0, 
-                scale_limit=0.2, 
-                rotate_limit=15, p=0.7))
-        else:
-            cfg["trfm_rot_scale"] = False
+                scale_limit=0.05, 
+                rotate_limit=10, p=0.7))
 
-        use_blur = trial.suggest_int("blur", 0, 1)
-        if use_blur:
-            cfg["trfm_blur"] = True
-            train_transforms.append(A.Blur(blur_limit=5, always_apply=False, p=0.5))
-        else:
-            cfg["trfm_blur"] = False
-
-
-        use_brightness_contrast = trial.suggest_int("contrast", 0, 1)
+        #use_brightness_contrast = trial.suggest_int("contrast", 0, 1)
+        use_brightness_contrast = False
         if use_brightness_contrast:
-            cfg["trfm_contr"] = True
-            train_transforms.append(A.RandomBrightnessContrast (brightness_limit=0.2, contrast_limit=0.2, p=0.3))
-        else:
-            cfg["trfm_contr"] = False
+            train_transforms.append(A.RandomBrightnessContrast (brightness_limit=0.05, contrast_limit=0.05, p=0.6))
 
 
+        train_transforms.append(A.Normalize(mean=[0.0],std=[1.0], max_pixel_value=255))
+        val_transforms.append(A.Normalize(mean=[0.0],std=[1.0], max_pixel_value=255))
         cfg["train_transforms"] = A.Compose(train_transforms)
+        cfg["val_transforms"] = A.Compose(val_transforms)
 
         for key in cfg:
             print(key, cfg[key])

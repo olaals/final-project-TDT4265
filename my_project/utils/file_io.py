@@ -11,6 +11,14 @@ def add_config_parser():
     args = parser.parse_args()
     return args
 
+def add_config_parser_with_model_folder():
+    description = "Train script for pytorch"
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument('config', help="Path to configuration py file")
+    parser.add_argument('model_folder', help="Model folder")
+    args = parser.parse_args()
+    return args
+
 def get_dict(args, print_config=False):
     config_path = args.config
     py_config_file = os.path.splitext(os.path.split(config_path)[-1])[0]
