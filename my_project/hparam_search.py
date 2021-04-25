@@ -20,13 +20,13 @@ class HparamStudy:
 
         metric = 0.0
 
-        im_sz = trial.suggest_categorical("image size", [(128, 96),(96,128),(352, 288), (288,352), (256, 192), (192, 256)])
+        im_sz = trial.suggest_categorical("image size", [(352, 288),  (256, 192)])
         #im_sz = (352,288)
 
         cfg = {}
         cfg["custom_logdir"] = os.path.join(self.study_name, f'imsz{im_sz[0]}x{im_sz[1]}')
         cfg["dataset"] = "TTE"
-        cfg["epochs"] = 50
+        cfg["epochs"] = 60
         cfg["image_width"] = im_sz[0]
         cfg["image_height"] = im_sz[1]
 
@@ -50,7 +50,7 @@ class HparamStudy:
 
 
 
-        model = trial.suggest_categorical("model", ["multiinput", "multiinput_longer"])
+        model = trial.suggest_categorical("model", ["unet_multiinp", "unet_normal"])
         cfg["model"] = model
         
         # HYPERPARAMS #
